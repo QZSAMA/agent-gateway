@@ -85,10 +85,12 @@ providers:
 make run
 
 # 或直接运行
-cd src && go run ./cmd/gateway/
+cd src
+go run ./cmd/gateway/
 
 # 指定配置文件
-cd src && go run ./cmd/gateway/ -config /path/to/gateway.yaml
+cd src
+go run ./cmd/gateway/ -config /path/to/gateway.yaml
 ```
 
 网关默认监听 `http://0.0.0.0:8080`。

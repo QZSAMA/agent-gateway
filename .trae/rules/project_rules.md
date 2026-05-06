@@ -18,12 +18,12 @@ Agent Gateway is a universal AI agent gateway that provides interoperability bet
 - Auth: JWT + API Key
 
 ## Build & Run Commands
-- Build: `cd src && go build -o ../bin/gateway ./cmd/gateway/`
-- Run: `cd src && go run ./cmd/gateway/`
-- Test: `cd src && go test ./...`
-- Test (verbose): `cd src && go test -v ./...`
-- Lint: `cd src && go vet ./...`
-- Format: `cd src && gofmt -w .`
+- Build: `cd src` then `go build -o ../bin/gateway ./cmd/gateway/`
+- Run: `cd src` then `go run ./cmd/gateway/`
+- Test: `cd src` then `go test ./...`
+- Test (verbose): `cd src` then `go test -v ./...`
+- Lint: `cd src` then `go vet ./...`
+- Format: `cd src` then `gofmt -w .`
 
 ## Code Style
 - Follow standard Go conventions (effective Go)
