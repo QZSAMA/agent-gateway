@@ -15,7 +15,10 @@ import (
 	"github.com/agent-gateway/gateway/internal/config"
 	"github.com/agent-gateway/gateway/internal/gateway"
 	"github.com/agent-gateway/gateway/internal/provider"
+	difyprovider "github.com/agent-gateway/gateway/internal/provider/dify"
+	hermesprovider "github.com/agent-gateway/gateway/internal/provider/hermes"
 	langgraphprovider "github.com/agent-gateway/gateway/internal/provider/langgraph"
+	openclawprovider "github.com/agent-gateway/gateway/internal/provider/openclaw"
 	"github.com/agent-gateway/gateway/internal/server"
 	"github.com/agent-gateway/gateway/internal/store"
 )
@@ -110,6 +113,12 @@ func createProvider(name string) (provider.AgentProviderAdapter, error) {
 	switch name {
 	case "langgraph":
 		return langgraphprovider.New(zerolog.Nop()), nil
+	case "dify":
+		return difyprovider.New(zerolog.Nop()), nil
+	case "openclaw":
+		return openclawprovider.New(zerolog.Nop()), nil
+	case "hermes":
+		return hermesprovider.New(zerolog.Nop()), nil
 	default:
 		return nil, fmt.Errorf("unknown provider: %s", name)
 	}
