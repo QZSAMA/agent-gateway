@@ -1,0 +1,76 @@
+server:
+  host: "0.0.0.0"
+  port: 8080
+  websocket:
+    enabled: true
+    path: "/ws"
+  cors:
+    allowed_origins:
+      - "*"
+
+auth:
+  jwt:
+    secret: "change-me-in-production"
+    expiry: "24h"
+  api_keys: []
+
+store:
+  type: "sqlite"
+  sqlite:
+    path: "./data/gateway.db"
+
+providers:
+  langgraph:
+    enabled: false
+    endpoint: "http://localhost:2024"
+    auth:
+      api_key: ""
+    options:
+      default_assistant: "agent"
+
+  dify:
+    enabled: false
+    endpoint: "http://localhost/v1"
+    auth:
+      api_key: ""
+    options:
+      default_app_type: "chat"
+
+  openclaw:
+    enabled: false
+    endpoint: "ws://localhost:18789"
+    auth:
+      token: ""
+    options:
+      protocol_version: 3
+
+  hermes:
+    enabled: false
+    endpoint: "http://localhost:8765"
+    auth:
+      token: ""
+    options:
+      transport: "http"
+
+protocols:
+  a2a:
+    enabled: true
+    path: "/a2a"
+  acp:
+    enabled: true
+    path: "/acp"
+  mcp:
+    enabled: true
+    path: "/mcp"
+  openai:
+    enabled: true
+    chat_completions: "/v1/chat/completions"
+    responses: "/v1/responses"
+
+logging:
+  level: "info"
+  format: "json"
+
+health:
+  check_interval: "30s"
+  unhealthy_threshold: 3
