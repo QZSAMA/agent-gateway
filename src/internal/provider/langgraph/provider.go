@@ -195,7 +195,7 @@ func (p *LangGraphProvider) CloseSession(ctx context.Context, sessionID string) 
 }
 
 func (p *LangGraphProvider) SendMessage(ctx context.Context, sessionID string, msg *model.Message, opts *provider.SendOptions) (*model.Message, error) {
-	assistantID := p.resolveAssistantID(msg.AgentID)
+	assistantID := p.resolveAssistantID("")
 
 	input := map[string]any{
 		"messages": p.convertMessage(msg),
@@ -216,7 +216,7 @@ func (p *LangGraphProvider) SendMessage(ctx context.Context, sessionID string, m
 }
 
 func (p *LangGraphProvider) StreamMessage(ctx context.Context, sessionID string, msg *model.Message, opts *provider.SendOptions) (<-chan model.StreamEvent, error) {
-	assistantID := p.resolveAssistantID(msg.AgentID)
+	assistantID := p.resolveAssistantID("")
 	ch := make(chan model.StreamEvent, 64)
 
 	input := map[string]any{

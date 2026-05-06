@@ -1,0 +1,8 @@
+# Integration tests are located in src/test_integration/
+# Run from project root:
+#   cd src
+#   go test -v ./test_integration/
+#
+# Or use this script:
+#   pwsh: .\test\run.ps1
+#   bash:  ./test/run.sh
