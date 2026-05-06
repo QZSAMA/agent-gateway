@@ -52,6 +52,14 @@ providers:
     options:
       transport: "http"
 
+  generic:
+    enabled: false
+    endpoint: "http://192.168.1.100:9000"
+    auth:
+      api_key: ""
+    options:
+      protocol: "auto"
+
 protocols:
   a2a:
     enabled: true

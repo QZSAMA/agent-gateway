@@ -15,6 +15,7 @@ import (
 	"github.com/agent-gateway/gateway/internal/model"
 	"github.com/agent-gateway/gateway/internal/provider"
 	difyprovider "github.com/agent-gateway/gateway/internal/provider/dify"
+	genericprovider "github.com/agent-gateway/gateway/internal/provider/generic"
 	hermesprovider "github.com/agent-gateway/gateway/internal/provider/hermes"
 	langgraphprovider "github.com/agent-gateway/gateway/internal/provider/langgraph"
 	openclawprovider "github.com/agent-gateway/gateway/internal/provider/openclaw"
@@ -774,5 +775,372 @@ func TestAllProviders_Interface(t *testing.T) {
 				t.Errorf("response role = %v, want agent", resp.Role)
 			}
 		})
+	}
+}
+
+// ===== AUTO-DISCOVERY MOCK SERVERS =====
+
+func newA2AMockServer() *httptest.Server {
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/.well-known/agent.json", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"schemaVersion": "0.2",
+			"name":          "Remote A2A Agent",
+			"description":   "A remote agent discovered via A2A",
+			"url":           "http://example.com",
+			"capabilities": map[string]any{
+				"streaming":         true,
+				"pushNotifications": false,
+			},
+			"skills": []map[string]any{
+				{"id": "ask", "name": "Ask", "description": "Ask questions"},
+			},
+		})
+	})
+
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" {
+			var req map[string]any
+			json.NewDecoder(r.Body).Decode(&req)
+
+			method, _ := req["method"].(string)
+
+			if method == "tasks/send" {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req["id"],
+					"result": map[string]any{
+						"id":     "task_mock_1",
+						"status": "completed",
+						"artifacts": []map[string]any{
+							{
+								"parts": []map[string]any{
+									{"type": "text", "text": "Hello from A2A agent!"},
+								},
+							},
+						},
+					},
+				})
+				return
+			}
+
+			if method == "tasks/cancel" {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(map[string]any{
+					"jsonrpc": "2.0",
+					"id":      req["id"],
+					"result":  map[string]any{},
+				})
+				return
+			}
+		}
+
+		w.WriteHeader(404)
+	})
+
+	return httptest.NewServer(mux)
+}
+
+func newMCPMockServer() *httptest.Server {
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/mcp", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			w.WriteHeader(405)
+			return
+		}
+
+		var req map[string]any
+		json.NewDecoder(r.Body).Decode(&req)
+
+		method, _ := req["method"].(string)
+
+		w.Header().Set("Content-Type", "application/json")
+
+		switch method {
+		case "initialize":
+			json.NewEncoder(w).Encode(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      req["id"],
+				"result": map[string]any{
+					"protocolVersion": "2024-11-05",
+					"capabilities":    map[string]any{},
+					"serverInfo":      map[string]any{"name": "mock-mcp", "version": "1.0.0"},
+				},
+			})
+
+		case "tools/list":
+			json.NewEncoder(w).Encode(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      req["id"],
+				"result": map[string]any{
+					"tools": []map[string]any{
+						{"name": "search", "description": "Search the web", "inputSchema": map[string]any{"type": "object"}},
+						{"name": "calculator", "description": "Calculate math", "inputSchema": map[string]any{"type": "object"}},
+					},
+				},
+			})
+
+		case "tools/call":
+			json.NewEncoder(w).Encode(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      req["id"],
+				"result": map[string]any{
+					"content": []map[string]any{
+						{"type": "text", "text": "MCP tool result: hello!"},
+					},
+				},
+			})
+
+		default:
+			json.NewEncoder(w).Encode(map[string]any{
+				"jsonrpc": "2.0",
+				"id":      req["id"],
+				"error":   map[string]any{"code": -32601, "message": "method not found"},
+			})
+		}
+	})
+
+	return httptest.NewServer(mux)
+}
+
+func newOpenAIMockServer() *httptest.Server {
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/v1/models", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]any{
+				{"id": "gpt-4", "object": "model"},
+			},
+		})
+	})
+
+	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		json.NewDecoder(r.Body).Decode(&req)
+
+		if stream, _ := req["stream"].(bool); stream {
+			w.Header().Set("Content-Type", "text/event-stream")
+			fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"Hello "}}]}`)
+			fmt.Fprintln(w, `data: {"choices":[{"delta":{"content":"from OpenAI!"}}]}`)
+			fmt.Fprintln(w, "data: [DONE]")
+			w.(http.Flusher).Flush()
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"role":    "assistant",
+						"content": "Hello from OpenAI mock!",
+					},
+				},
+			},
+		})
+	})
+
+	return httptest.NewServer(mux)
+}
+
+// ===== AUTO-DISCOVERY TESTS =====
+
+func TestAutoDiscovery_DetectA2A(t *testing.T) {
+	ts := newA2AMockServer()
+	defer ts.Close()
+
+	p := genericprovider.New(zerolog.Nop())
+	err := p.Initialize(context.Background(), provider.ProviderConfig{
+		Endpoint: ts.URL,
+		Auth:     provider.AuthConfig{APIKey: "test-key"},
+		Options:  map[string]any{"protocol": "auto"},
+	})
+	if err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	agents, _ := p.ListAgents(context.Background())
+	if len(agents) == 0 {
+		t.Fatal("no agents discovered")
+	}
+	if agents[0].Name != "Remote A2A Agent" {
+		t.Errorf("agent name = %v, want 'Remote A2A Agent'", agents[0].Name)
+	}
+}
+
+func TestAutoDiscovery_DetectMCP(t *testing.T) {
+	ts := newMCPMockServer()
+	defer ts.Close()
+
+	p := genericprovider.New(zerolog.Nop())
+	err := p.Initialize(context.Background(), provider.ProviderConfig{
+		Endpoint: ts.URL,
+		Auth:     provider.AuthConfig{APIKey: "test-key"},
+		Options:  map[string]any{"protocol": "auto"},
+	})
+	if err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	agents, _ := p.ListAgents(context.Background())
+	if len(agents) == 0 {
+		t.Fatal("no agents discovered")
+	}
+}
+
+func TestAutoDiscovery_DetectOpenAI(t *testing.T) {
+	ts := newOpenAIMockServer()
+	defer ts.Close()
+
+	p := genericprovider.New(zerolog.Nop())
+	err := p.Initialize(context.Background(), provider.ProviderConfig{
+		Endpoint: ts.URL,
+		Auth:     provider.AuthConfig{APIKey: "test-key"},
+		Options:  map[string]any{"protocol": "auto"},
+	})
+	if err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	agents, _ := p.ListAgents(context.Background())
+	if len(agents) == 0 {
+		t.Fatal("no agents discovered")
+	}
+}
+
+func TestAutoDiscovery_ManualProtocol(t *testing.T) {
+	ts := newA2AMockServer()
+	defer ts.Close()
+
+	p := genericprovider.New(zerolog.Nop())
+	err := p.Initialize(context.Background(), provider.ProviderConfig{
+		Endpoint: ts.URL,
+		Auth:     provider.AuthConfig{APIKey: "test-key"},
+		Options:  map[string]any{"protocol": "a2a"},
+	})
+	if err != nil {
+		t.Fatalf("initialize with manual protocol: %v", err)
+	}
+
+	agents, _ := p.ListAgents(context.Background())
+	if len(agents) == 0 {
+		t.Fatal("no agents discovered")
+	}
+	if agents[0].Name != "Remote A2A Agent" {
+		t.Errorf("agent name = %v, want 'Remote A2A Agent'", agents[0].Name)
+	}
+}
+
+func TestAutoDiscovery_A2A_SendMessage(t *testing.T) {
+	ts := newA2AMockServer()
+	defer ts.Close()
+
+	p := genericprovider.New(zerolog.Nop())
+	initProvider(t, p, ts.URL)
+
+	sess, _ := p.CreateSession(context.Background(), "generic:a2a", nil)
+
+	resp, err := sendMessage(p, sess.ID, "Hello A2A")
+	if err != nil {
+		t.Fatalf("send message: %v", err)
+	}
+	if resp.Role != model.RoleAgent {
+		t.Errorf("role = %v, want agent", resp.Role)
+	}
+	if len(resp.Content) == 0 || !strings.Contains(resp.Content[0].Text, "A2A") {
+		t.Errorf("unexpected response: %v", resp.Content)
+	}
+}
+
+func TestAutoDiscovery_MCP_SendMessage(t *testing.T) {
+	ts := newMCPMockServer()
+	defer ts.Close()
+
+	p := genericprovider.New(zerolog.Nop())
+	err := p.Initialize(context.Background(), provider.ProviderConfig{
+		Endpoint: ts.URL,
+		Auth:     provider.AuthConfig{APIKey: "test-key"},
+		Options:  map[string]any{"protocol": "mcp"},
+	})
+	if err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	sess, _ := p.CreateSession(context.Background(), "generic:mcp", nil)
+
+	resp, err := sendMessage(p, sess.ID, "Hello MCP")
+	if err != nil {
+		t.Fatalf("send message: %v", err)
+	}
+	if resp.Role != model.RoleAgent {
+		t.Errorf("role = %v, want agent", resp.Role)
+	}
+}
+
+func TestAutoDiscovery_MCP_ListTools(t *testing.T) {
+	ts := newMCPMockServer()
+	defer ts.Close()
+
+	p := genericprovider.New(zerolog.Nop())
+	err := p.Initialize(context.Background(), provider.ProviderConfig{
+		Endpoint: ts.URL,
+		Auth:     provider.AuthConfig{APIKey: "test-key"},
+		Options:  map[string]any{"protocol": "mcp"},
+	})
+	if err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	tools, err := p.ListTools(context.Background(), "generic:mcp")
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+	if len(tools) < 2 {
+		t.Errorf("expected at least 2 tools, got %d", len(tools))
+	}
+}
+
+func TestAutoDiscovery_OpenAI_SendMessage(t *testing.T) {
+	ts := newOpenAIMockServer()
+	defer ts.Close()
+
+	p := genericprovider.New(zerolog.Nop())
+	err := p.Initialize(context.Background(), provider.ProviderConfig{
+		Endpoint: ts.URL,
+		Auth:     provider.AuthConfig{APIKey: "test-key"},
+		Options:  map[string]any{"protocol": "openai"},
+	})
+	if err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	sess, _ := p.CreateSession(context.Background(), "generic:openai", nil)
+
+	resp, err := sendMessage(p, sess.ID, "Hello OpenAI")
+	if err != nil {
+		t.Fatalf("send message: %v", err)
+	}
+	if resp.Role != model.RoleAgent {
+		t.Errorf("role = %v, want agent", resp.Role)
+	}
+	if len(resp.Content) == 0 || !strings.Contains(resp.Content[0].Text, "OpenAI") {
+		t.Errorf("unexpected response: %v", resp.Content)
+	}
+}
+
+func TestAutoDiscovery_InvalidEndpoint(t *testing.T) {
+	p := genericprovider.New(zerolog.Nop())
+	err := p.Initialize(context.Background(), provider.ProviderConfig{
+		Endpoint: "http://127.0.0.1:59999",
+		Auth:     provider.AuthConfig{},
+		Options:  map[string]any{"protocol": "auto"},
+	})
+	if err == nil {
+		t.Error("expected error for invalid endpoint, got nil")
 	}
 }
